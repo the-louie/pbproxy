@@ -161,7 +161,7 @@ const repost = (urlData) => {
 
     req.on('error', error => {
         if (error.toString() === 'Gateway Time-out' || error.toString() === 'Found') {
-            console.warn(chalk.yellow(`WARN: ${error} (${urlData.id} marked as completed anyway)`))
+            console.warn(chalk.yellow(`WARN: ${error} (${urlData.id} marked as completed anyway).`))
             sqlPut(`UPDATE urls SET forwarded_date=datetime('now') WHERE id=?`, urlData.id)
         } else {
             console.error(`Error: '${error.toString()}`)
