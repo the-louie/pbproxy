@@ -97,6 +97,13 @@ const requestHandler = async (req, res) => {
             } else {
                 return res.end(`FAIL: No urls left to forward.`)
             }
+        case '/STA':
+            const sqlResSta = await sqlGet(`select date, "avg rand", "sum wprob", "post count" from (select 1 as '#', strftime('%Y-%m-%d', t) date, avg(random_value) as 'avg rand', sum(wprob) 'sum wprob', sum(case when random_value < wprob then 1 else 0 end) as 'post count' from cron_log group by strftime('%j', t)  union select 2, '---', '---','---', '-------' from cron_log union select 3, 'sum' as date, avg(random_value) as 'avg rand', sum(wprob) wprob, sum(case when random_value < wprob then 1 else 0 end) as 'post count' from cron_log union select 4, 'unposted', strftime('%Y%m%d %H:%M', datetime()) now, '', count(*) from urls where forwarded_date is null) order by "#"`)
+            if (sqlResSta !== undefined) {
+                return res.end(`STA:\n${JSON.stringify(sqlResSta, 2)}\n\n`)
+            } else {
+                return res.end(`FAIL: Error when quering database.`)
+            }
         default:
             return res.end('UNK: ' + Math.floor(Math.random()*10000000).toString(16))
     }
