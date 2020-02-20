@@ -89,14 +89,21 @@ const requestHandler = async (req, res) => {
             } else {
                 return res.end(`FAIL: ${storeRes.err}`)
             }
-
+        case '/FWD':
+            const sqlResFwd = await sqlGet('SELECT id, url from urls where forwarded_date is null order by added_date limit 1')
+            if (sqlResFwd !== undefined) {
+                repost(sqlResFwd)
+                return res.end(`FWD: ${sqlResFwd.url}.`)
+            } else {
+                return res.end(`FAIL: No urls left to forward.`)
+            }
         default:
             return res.end('UNKN: ' + Math.floor(Math.random()*10000000).toString(16))
     }
 }
 
 // DO REQUEST TO THE REAL TARGET
-const repost = (urlData, msm, c, r, wp, w) => {
+const repost = (urlData) => {
     console.info(chalk.blueBright(`Repost: `, urlData.url))
 
     // Use user+pass if provided
@@ -159,9 +166,9 @@ const cronHandler = async () => {
     await sqlPut(`INSERT INTO cron_log (msm, url_count, random_value, weight, wprob) VALUES (?,?,?,?,?)`, [msm(), newUrlCount, r, weight, wprob])
 
     if (r < wprob) {
-        const sqlRes = await sqlGet('SELECT id, url from urls where forwarded_date is null order by added_date limit 10')
+        const sqlRes = await sqlGet('SELECT id, url from urls where forwarded_date is null order by added_date limit 1')
         if (sqlRes !== undefined) {
-            setTimeout(repost, Math.random()*60000, sqlRes, msm(), newUrlCount, r, wprob, weight)
+            setTimeout(repost, Math.random()*60000, sqlRes)
         }
     }
 
