@@ -121,7 +121,11 @@ const repost = (urlData) => {
     httpsOptions.path = httpsOptions.basePath + urlData.url
     const req = https.request(httpsOptions, res => {
         res.setEncoding('utf8')
-        if (res.statusCode !== 200 && res.statusMessage !==302) {
+        if (res.statusCode === 415) {
+            sqlPut(`UPDATE urls SET forwarded_date=? WHERE id=?`, [res.statusMessage.toString(), urlData.id])
+            console.warn(chalk.yellow(`WARN: ${res.statusMessage} (${urlData.id} marked as error).`))
+            return true
+        } else if (res.statusCode !== 200 && res.statusMessage !==302) {
             if (res.statusMessage.toString() === 'Found') {
                 sqlPut(`UPDATE urls SET forwarded_date=datetime('now') WHERE id=?`, urlData.id)
                 return true
