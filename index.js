@@ -41,10 +41,14 @@ const validateUrl = (value) => {
 
 const sqlGet = async(query, params) => new Promise((resolve, reject) => {
     const stmt = db.prepare(query)
-    stmt.get(params, (err, row) => {
+    stmt.all(params, (err, rows) => {
         stmt.finalize();
         if (err) { return reject(err) }
-        return resolve(row)
+        if (rows.length === 1) {
+            return resolve(rows[0])
+        } else {
+            return resolve(rows)
+        }
     })
 })
 
