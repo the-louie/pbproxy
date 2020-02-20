@@ -104,6 +104,13 @@ const requestHandler = async (req, res) => {
             } else {
                 return res.end(`FAIL: Error when quering database.`)
             }
+        case '/LST':
+            const sqlResLst = await sqlGet(`select * from urls`)
+            if (sqlResLst !== undefined) {
+                return res.end(`LST:\n${JSON.stringify(sqlResLst, 2)}\n\n`)
+            } else {
+                return res.end(`FAIL: Error when quering database.`)
+            }
         default:
             return res.end('UNK: ' + Math.floor(Math.random()*10000000).toString(16))
     }
