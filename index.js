@@ -98,7 +98,7 @@ const requestHandler = async (req, res) => {
                 return res.end(`FAIL: No urls left to forward.`)
             }
         default:
-            return res.end('UNKN: ' + Math.floor(Math.random()*10000000).toString(16))
+            return res.end('UNK: ' + Math.floor(Math.random()*10000000).toString(16))
     }
 }
 
