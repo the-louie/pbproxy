@@ -113,6 +113,11 @@ const repost = (urlData) => {
          }
     }
 
+    if (urlData.url === undefined) {
+        console.debug(urlData)
+        return console.error(chalk.red('ERROR: urlData.url is undefined.'))
+    }
+
     httpsOptions.path = httpsOptions.basePath + urlData.url
     const req = https.request(httpsOptions, res => {
         res.setEncoding('utf8')
