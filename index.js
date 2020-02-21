@@ -60,6 +60,7 @@ const sqlPut = async(query, params) => new Promise((resolve, reject) => {
         return resolve()
     })
 })
+
 const dupUrl = async (url) => ((await sqlGet('SELECT COUNT(*) as n FROM urls WHERE url=?', url))['n']) > 0 ? true : false
 const countUrls = async () => (await sqlGet('SELECT COUNT(*) as n FROM urls WHERE forwarded_date is null', url))['n']
 
@@ -77,6 +78,29 @@ const storeURL = async (url) => {
     console.info(chalk.green(`Adding url: ${url}`))
 
     return {id: 0}
+}
+
+// This returns values along a bell curve from 0 - 1 - 0 with an input of 0 - 1.
+function toBell(x,scale){
+    scale = scale || false;
+    var stdD = .125
+    var mean = .5
+    if(scale){
+        return  1 / (( 1/( stdD * Math.sqrt(2 * Math.PI) ) ) * Math.pow(Math.E , -1 * Math.pow(x - mean, 2) / (2 * Math.pow(stdD,2))));
+    }else{
+        return (( 1/( stdD * Math.sqrt(2 * Math.PI) ) ) * Math.pow(Math.E , -1 * Math.pow(x - mean, 2) / (2 * Math.pow(stdD,2)))) * toBell(.5,true);
+    }
+}
+
+// Minutes since midnight
+const msm = () => {
+    const now = new Date()
+    const then = new Date(
+            now.getFullYear(),
+            now.getMonth(),
+            now.getDate(),
+            0,0,0)
+    return Math.floor((now.getTime() - then.getTime()) / 60000); // difference in minutes
 }
 
 const requestHandler = async (req, res) => {
@@ -135,15 +159,15 @@ const repost = (urlData) => {
     httpsOptions.path = httpsOptions.basePath + urlData.url
     const req = https.request(httpsOptions, res => {
         res.setEncoding('utf8')
-        if (res.statusCode === 415) {
+        if (res.statusCode === 415) { // Unsupported filetype
             sqlPut(`UPDATE urls SET forwarded_date=? WHERE id=?`, [res.statusMessage.toString(), urlData.id])
             console.warn(chalk.yellow(`WARN: ${res.statusMessage} (${urlData.id} marked as error).`))
             return true
-        } else if (res.statusCode !== 200 && res.statusMessage !==302) {
-            if (res.statusMessage.toString() === 'Found') {
+        } else if (res.statusCode !== 200 && res.statusMessage !==302) { // Not ok
+            if (res.statusMessage.toString() === 'Found') { // but ok anyway
                 sqlPut(`UPDATE urls SET forwarded_date=datetime('now') WHERE id=?`, urlData.id)
                 return true
-            } else if (res.statusMessage.toString() === 'Gateway Time-out') {
+            } else if (res.statusMessage.toString() === 'Gateway Time-out') { // This probably doesn't happen anymore, did happend due to internal error in the target
                 sqlPut(`UPDATE urls SET forwarded_date=datetime('now') WHERE id=?`, urlData.id)
                 return console.warn(chalk.yellow(`WARN: ${res.statusCode} '${res.statusMessage}' (id:${urlData.id} marked as completed anyway).`))
             } else {
@@ -199,33 +223,10 @@ const cronHandler = async () => {
     cronHandle = setTimeout(cronHandler, sleepTime)
 }
 
-const server = http.createServer(requestHandler)
 
 
 
 
-// This returns values along a bell curve from 0 - 1 - 0 with an input of 0 - 1.
-function toBell(x,scale){
-    scale = scale || false;
-    var stdD = .125
-    var mean = .5
-    if(scale){
-        return  1 / (( 1/( stdD * Math.sqrt(2 * Math.PI) ) ) * Math.pow(Math.E , -1 * Math.pow(x - mean, 2) / (2 * Math.pow(stdD,2))));
-    }else{
-        return (( 1/( stdD * Math.sqrt(2 * Math.PI) ) ) * Math.pow(Math.E , -1 * Math.pow(x - mean, 2) / (2 * Math.pow(stdD,2)))) * toBell(.5,true);
-    }
-}
-
-// Minutes since midnight
-const msm = () => {
-    const now = new Date()
-    const then = new Date(
-            now.getFullYear(),
-            now.getMonth(),
-            now.getDate(),
-            0,0,0)
-    return Math.floor((now.getTime() - then.getTime()) / 60000); // difference in minutes
-}
 
 
 
@@ -264,6 +265,6 @@ async function main() {
 
 
 
-
+const server = http.createServer(requestHandler)
 main()
 
