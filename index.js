@@ -1,4 +1,5 @@
 require('log-timestamp')
+require('dotenv').config();
 
 const chalk = require('chalk')
 const http = require('http')
@@ -61,24 +62,32 @@ const sqlPut = async (query, params) => new Promise((resolve, reject) => {
 const dupUrl = async (url) => ((await sqlGet('SELECT COUNT(*) as n FROM urls WHERE url=?', url)).n) > 0
 const countUrls = async () => (await sqlGet('SELECT COUNT(*) as n FROM urls WHERE forwarded_date is null', url)).n
 
+function timeout(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+async function sleep(fn, duration, ...args) {
+  await timeout(duration);
+  return fn(...args);
+}
+
 const storeURL = async (url) => {
   if (!validateUrl(url)) {
-    console.error(chalk.red(`Invalid url: ${url}`))
+    console.error(chalk.red(`storeURL() Invalid url: ${url}`))
     return { err: 'INV_URL' }
   }
   if (await dupUrl(url)) {
-    console.error(chalk.red(`Duplicate url: ${url}`))
+    console.error(chalk.red(`storeURL Duplicate url: ${url}`))
     return { err: 'DUP_URL' }
   }
 
   await sqlPut('INSERT INTO urls (url) VALUES (?)', url)
-  console.info(chalk.green(`Adding url: ${url}`))
+  console.info(chalk.green(`storeURLAdding url: ${url}`))
 
   return { id: 0 }
 }
 
 // This returns values along a bell curve from 0 - 1 - 0 with an input of 0 - 1.
-function toBell (x, scale) {
+function toBell(x, scale) {
   scale = scale || false
   var stdD = 0.125
   var mean = 0.5
@@ -111,13 +120,15 @@ const REG = async (req, res) => {
 }
 
 const FWD = async (req, res) => {
-  const sqlResFwd = await sqlGet('SELECT id, url from urls where forwarded_date is null order by added_date limit 1')
-  if (sqlResFwd !== undefined) {
-    repost(sqlResFwd)
-    return res.end(`FWD: ${sqlResFwd.url}.`)
-  } else {
-    return res.end('FAIL: No urls left to forward.')
-  }
+  console.log('FWD')
+  await repost(0)
+  // const sqlResFwd = await sqlGet('SELECT id, url from urls where forwarded_date is null order by added_date limit 1')
+  // if (sqlResFwd !== undefined) {
+  //   repost(sqlResFwd)
+  //   return res.end(`FWD: ${sqlResFwd.url}.`)
+  // } else {
+  //   return res.end('FAIL: No urls left to forward.')
+  // }
 }
 
 const STA = async (req, res) => {
@@ -154,7 +165,22 @@ const requestHandler = async (req, res) => {
 }
 
 // DO REQUEST TO THE REAL TARGET
-const repost = urlData => {
+const repost = async (depth = 1) => {
+  if (depth > 100) {
+    console.warn('repost(): Depth above 100, unwinding recursive loop.', depth)
+    return false
+  }
+
+  const urlData = await sqlGet('SELECT id, url from urls where forwarded_date is null order by added_date limit 1')
+  if (urlData == undefined) {
+    console.warn('repost(): urlData is undefined, retrying.', depth)
+    await sleep(repost, 1000, ++depth)
+    // await repost(++depth)
+    return false
+  }
+
+
+
   console.info(chalk.blueBright('Repost: ', urlData.url))
 
   // Use user+pass if provided
@@ -166,46 +192,68 @@ const repost = urlData => {
 
   if (urlData.url === undefined) {
     console.debug(urlData)
-    return console.error(chalk.red('ERROR: urlData.url is undefined.'))
+    console.error(chalk.red('ERROR: urlData.url is undefined.'))
+    return false
   }
 
   httpsOptions.path = httpsOptions.basePath + encodeURIComponent(urlData.url)
-  const req = https.request(httpsOptions, res => {
+  let success = false
+  const req = https.request(httpsOptions, (res) => {
     res.setEncoding('utf8')
     if (res.statusCode === 415 || res.statusCode === '415') { // Unsupported filetype
       sqlPut('UPDATE urls SET forwarded_date=? WHERE id=?', [res.statusMessage.toString(), urlData.id])
       console.warn(chalk.yellow(`WARN: ${res.statusMessage} (${urlData.id} marked as error).`))
-      return true
-    } else if (res.statusCode !== 200 && res.statusMessage !== 302) { // Not ok
+      success = false
+      return false
+    } else if (res.statusCode !== 200 && res.statusCode !== 302) { // Not ok
       if (res.statusMessage.toString() === 'Found') { // but ok anyway
         sqlPut('UPDATE urls SET forwarded_date=datetime(\'now\') WHERE id=?', urlData.id)
+        success = true
         return true
-      } else if (res.statusMessage.toString() === 'Gateway Time-out') { // This probably doesn't happen anymore, did happend due to internal error in the target
-        sqlPut('UPDATE urls SET forwarded_date=datetime(\'now\') WHERE id=?', urlData.id)
-        return console.warn(chalk.yellow(`WARN: ${res.statusCode} '${res.statusMessage}' (id:${urlData.id} marked as completed anyway).`))
+        // } else if (res.statusMessage.toString() === 'Gateway Time-out') { // This probably doesn't happen anymore, did happend due to internal error in the target
+        //   sqlPut('UPDATE urls SET forwarded_date=datetime(\'now\') WHERE id=?', urlData.id)
+        //   return console.warn(chalk.yellow(`WARN: ${res.statusCode} '${res.statusMessage}' (id:${urlData.id} marked as completed anyway).`))
       } else {
-        return console.error(`Error: ${res.statusCode} '${res.statusMessage.toString()}'`)
+        success = false
+        console.error(`Error: ${res.statusCode} '${res.data}'`)
+        return false
       }
+    } else if (res.statusCode === 302) {
+      console.info(chalk.whiteBright(`INFO: (${urlData.id} marked as dupe).`))
+      sqlPut('UPDATE urls SET forwarded_date=? WHERE id=?', ['DUPE', urlData.id])
+      success = false
+      return false
     }
-    res.on('data', data => {
+
+    res.on('data', (data) => {
       if (data.substr(0, 5) === 'Found') {
         sqlPut('UPDATE urls SET forwarded_date=datetime(\'now\') WHERE id=?', urlData.id)
       } else {
-        return console.error(chalk.red(`ERROR: ${data}`))
+        success = false
+        console.error(chalk.red(`repost() ERROR req.on('data'): ${data}`))
+        return false
       }
     })
   })
 
-  req.on('error', error => {
+  req.on('error', (error) => {
     if (error.toString() === 'Gateway Time-out' || error.toString() === 'Found') {
       console.warn(chalk.yellow(`WARN: ${error} (${urlData.id} marked as completed anyway).`))
       sqlPut('UPDATE urls SET forwarded_date=datetime(\'now\') WHERE id=?', urlData.id)
     } else {
-      console.error(`Error: '${error.toString()}`)
+      console.error(`repost() ERROR: req.on('error'): '${error.toString()}`)
+      success = false
+      return false
     }
   })
 
   req.end()
+
+  if (!success) {
+    console.warn('repost(): unsuccessfull, retrying.', depth)
+    await sleep(repost, 1000, ++depth)
+    // setTimeout(repost, (Math.random() * 5000) + 1000, ++depth) // if we didn't succeed repost again in 1-7s
+  }
 }
 
 const cronHandler = async () => {
@@ -224,17 +272,15 @@ const cronHandler = async () => {
   await sqlPut('INSERT INTO cron_log (msm, url_count, random_value, weight, wprob) VALUES (?,?,?,?,?)', [msm(), newUrlCount, r, weight, wprob])
 
   if (r < wprob) {
-    const sqlRes = await sqlGet('SELECT id, url from urls where forwarded_date is null order by added_date limit 1')
-    if (sqlRes !== undefined) {
-      setTimeout(repost, Math.random() * 60000, sqlRes)
-    }
+    // setTimeout(repost, Math.random() * 60000)
+    repost(0)
   }
 
   const sleepTime = (60000 + (Math.random() - 0.5) * (30000))
   cronHandle = setTimeout(cronHandler, sleepTime)
 }
 
-async function main () {
+async function main() {
   console.info(chalk.green('Start'))
 
   await db.exec(`CREATE TABLE IF NOT EXISTS urls (
