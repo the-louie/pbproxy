@@ -1,12 +1,14 @@
 FROM node:latest
 
 WORKDIR /usr/src/app
-
-VOLUME /usr/src/app/data
+RUN mkdir ./data
+#VOLUME /usr/src/app/data
 
 RUN apt-get update && apt-get -y autoremove && apt-get -y upgrade
 
 RUN apt-get -y install build-essential python sqlite3
+
+RUN npm install -g npm
 
 # Install app dependencies
 # A wildcard is used to ensure both package.json AND package-lock.json are copied
