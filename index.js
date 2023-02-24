@@ -18,7 +18,7 @@ const db = new sqlite3.Database('./data/memory.db')
 const C = 451.14021301
 
 const hostuser = process.env.PB_HOSTUSER
-const hostpass = process.env.PV_HOSTPASS
+const hostpass = process.env.PB_HOSTPASS
 const hostname = process.env.PB_HOSTNAME
 const hostport = process.env.PB_HOSTPORT || 443
 const hostpath = process.env.PB_HOSTPATH || '/'
