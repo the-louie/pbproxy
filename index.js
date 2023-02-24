@@ -17,13 +17,14 @@ const db = new sqlite3.Database('./data/memory.db')
 
 const C = 451.14021301
 
-const hostuser = process.env.HOSTUSER
-const hostpass = process.env.HOSTPASS
-const hostname = process.env.HOSTNAME
-const hostport = process.env.HOSTPORT || 443
-const hostpath = process.env.HOSTPATH || '/'
+const hostuser = process.env.PB_HOSTUSER
+const hostpass = process.env.PV_HOSTPASS
+const hostname = process.env.PB_HOSTNAME
+const hostport = process.env.PB_HOSTPORT || 443
+const hostpath = process.env.PB_HOSTPATH || '/'
+const DBG = process.env.PB_DEBUG
 
-const localport = process.env.LOCALPORT || 9922
+const localport = process.env.PB_LOCALPORT || 19922
 
 if (hostname === undefined) {
   console.error(chalk.red('ERROR: Environment variable HOSTNAME is empty.'))
@@ -127,14 +128,7 @@ const REG = async (req, res) => {
 
 const FWD = async (req, res) => {
   console.log('FWD')
-  await repost(0)
-  // const sqlResFwd = await sqlGet('SELECT id, url from urls where forwarded_date is null order by added_date limit 1')
-  // if (sqlResFwd !== undefined) {
-  //   repost(sqlResFwd)
-  //   return res.end(`FWD: ${ sqlResFwd.url }.`)
-  // } else {
-  //   return res.end('FAIL: No urls left to forward.')
-  // }
+  await repost(1)
 }
 
 const STA = async (req, res) => {
@@ -224,7 +218,9 @@ const repost = async (depth = 1) => {
     } else if (res.statusCode !== 200 && res.statusCode !== 302) { // Not ok
       if (res.statusMessage.toString() === 'Found') { // but ok anyway
         sqlPut('UPDATE urls SET forwarded_date=datetime(\'now\') WHERE id=?', urlData.id)
-        console.info(`INFO: OK ${res.statusCode} '${urlData.id}'`)
+        if (DBG) {
+          console.info(`INFO: OK ${res.statusCode} '${urlData.id}'`)
+        }
         LAST_SUCCESS = true
         return true
       } else {
@@ -254,19 +250,17 @@ const repost = async (depth = 1) => {
   })
 
   req.end()
-
-  console.log(chalk.green("end of repost()"))
 }
 
 const cronHandler = async () => {
   // if (cronHandle._idleNext !== null) { clearTimeout(cronHandle) }
 
   // Curve: https://www.wolframalpha.com/input/?i=tanh%28x*2.5+%2F+200%29+*+50+for+0+to+300
-  const prob = toBell(msm() / 1440) / (C) // Bellcurve spreading prob over 1440 minutes so the sum of all probs is 1 thanks to C
+  const prob = toBell(msm() / 1440) / (C) // Bellcurve spreading prob over 1440 minutes so the sum of all probs is 1 thanks to magic constant C = 451.14021301
   const newUrlCount = await countUrls()
-  const M = 300 // Max - where should the curve plane out
-  const DAM = 50 // Daily at Max - how many posts per day at M
-  const weight = (Math.tanh(newUrlCount * 2.5 / M) * DAM) // tanh curve above
+  const M = 1500 // Max - where should the curve plane out, not really but a nice good number to get it to plane out around 50 posts a day
+  const DAM = 30 // Daily at Max - how many posts per day at M (not exact science, becomes ~50 with the above M)
+  const weight = (Math.tanh(newUrlCount / M) * DAM) // tanh curve above
   const wprob = prob * weight
   const r = Math.random()
 
@@ -279,7 +273,9 @@ const cronHandler = async () => {
   }
 
   const sleepTime = (60000 + (Math.random() - 0.5) * (30000))
-  console.log(chalk.green(`Sleeping for ${Math.round(sleepTime / 1000)}s`))
+  if (DBG) {
+    console.log(chalk.green(`Sleeping for ${Math.round(sleepTime / 1000)}s`))
+  }
   sleep(cronHandler, sleepTime)
 }
 
